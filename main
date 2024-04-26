@@ -1,0 +1,184 @@
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import scipy as sc
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, WhiteKernel
+
+
+path_main = os.path.dirname(os.path.abspath(__file__))
+print(path_main)
+
+list_weights = []
+list_maxima_fr = []
+list_maxima_difwd = []
+list_modes = []
+list_temperature = []
+list_humidity = []
+list_experiment = []
+
+if 'baseline_temperature.csv' not in os.listdir(path_main):
+    for day in os.listdir(os.path.join(path_main, 'data')):
+        if day not in ['20240318_21_hisorad_ns']:
+            continue
+        for exp in os.listdir(os.path.join(path_main, 'data', day)):
+            # Iterate through experiments for a specific day
+            print(exp)
+            try:  # Attempt to find the first Excel file (.xlsx) in the experiment directory
+                excel_file = [file for file in os.listdir(
+                    os.path.join(path_main, 'data', day, exp)
+                ) if '.xlsx' in file][0]
+            except (IndexError, NotADirectoryError):
+                # If no Excel file is found, continue to the next experiment
+                continue
+            weights = pd.read_excel(
+                os.path.join(path_main, 'data', day, exp, excel_file)
+            )
+            # Create a list of files that are not Excel files in the experiment directory
+            list_files = [file for file in os.listdir(
+                os.path.join(path_main, 'data', day, exp)
+            ) if '.xlsx' not in file]
+            # Iterate over the index and value pairs using enumerate
+            for i, no in enumerate(weights.iloc[:, 0]):
+                # extracts correct index of file from list_files corresponding to value in weights dataframe
+                # to compare with values of weights split is done
+                idc_file = [file.split('.')[0] for file in list_files].index(str(no))
+                list_weights.append(weights.iloc[i, 1])
+
+                data = pd.read_csv(os.path.join(path_main, 'data', day, exp, list_files[idc_file]))
+                data['prt'] = data['prt'].replace(0, pd.NA)
+                mean_non_zero = data['prt'].mean(skipna=True)
+                data['prt'].fillna(mean_non_zero, inplace=True)
+                time = (data['time'] + data['date']).to_numpy()
+                # Subtract the minimum value from each element
+                if len(time) > 0:
+                    time -= time.min()
+                # unique values are ignored and indices are stored
+                _, unique_indices = np.unique(time, return_index=True)
+
+                time = time[unique_indices]
+                # only unique rows and all the columns are selected from data
+                data = data.iloc[unique_indices, :]
+                sc.signal.convolve(data['fr'].astype(float), np.ones(3), mode='same')
+
+                filtered_fr = -(sc.signal.savgol_filter(
+                    sc.signal.medfilt(
+                        data['fr'], 3
+                    ),
+                    polyorder=1,
+                    window_length=11
+                ) - sc.stats.mode(data['fr'],
+                                  keepdims=False)[0])
+
+                filtered_wd = (sc.signal.savgol_filter(
+                    sc.signal.medfilt(
+                        data['wd'], 21
+                    ),
+                    polyorder=1,
+                    window_length=101
+                ))
+
+                filtered_wd -= np.median(filtered_wd)
+
+
+                #integral_fr = 0.5 * (filtered_fr[1:] + filtered_fr[:-1]) * (time[1:] - time[:-1])
+                # return the INDEX of the maximum value
+                peak_start = np.argmax(filtered_fr) - 120
+                peak_stop = np.argmax(filtered_fr) + 120
+                plt.ylim(0.005, 2.5 )
+
+                plt.plot(time[peak_start:peak_stop] - time[peak_start],
+                         filtered_fr[peak_start:peak_stop],
+                         color='black',
+                         aa=True)
+                plt.xlabel('time (s)')
+                plt.ylabel('v (GHz)')
+
+                list_modes.append(sc.stats.mode(data['fr'],
+                                                keepdims=False)[0])
+                list_temperature.append(np.mean(data['prt']))
+                list_humidity.append(weights.iloc[i, 2])
+                list_maxima_fr.append(np.max(filtered_fr))
+                list_experiment.append(exp)
+                list_maxima_difwd.append(np.max(filtered_wd))
+
+        plt.show()
+    lengths = [len(list_maxima_difwd), len(list_modes), len(list_weights), len(list_maxima_fr)]
+
+# Ensure all lists have the same length
+    if len(set(lengths)) != 1:
+        print("Error: Lists have different lengths.")
+    else:
+        data = pd.DataFrame({'Experiment': list_experiment, 'Temperature': list_temperature, 'Humidity': list_humidity, 'Max_difwd': list_maxima_difwd, 'Mode_fr': list_modes, 'Mass': list_weights, 'Max_fr': list_maxima_fr})
+        data.to_csv(os.path.join(path_main, 'baseline_temperature.csv'), index=False)
+        data = data.to_numpy()
+else:
+    data = pd.read_csv(os.path.join(path_main, 'baseline_temperature.csv')).to_numpy()
+
+
+data = data[:, 1:].astype(float)
+#data = data.astype(float)
+
+#data = data[np.where(data[:, -1] > 0.01)[0], :]
+reg_model = sc.stats.linregress(data[:, -2],
+                                data[:, -1])
+print(reg_model.rvalue ** 2)
+
+plt.scatter(data[:, -2],
+            data[:, -1],
+            marker='*',
+            color='black')
+# Set y-axis limits starting from 0.02
+plt.ylim(0.01, max(data[:, -1]))  # Adjust max(y) if needed
+residuals = data[:, -1] - (reg_model.slope*(data[:, -2])+reg_model.intercept)
+residual_std_dev = np.std(residuals, ddof=2)
+LOD = 3.3 * (residual_std_dev / np.abs(reg_model.slope))
+LOQ = 10 * (residual_std_dev / np.abs(reg_model.slope))
+Slope = reg_model.slope
+print(LOD,LOQ)
+
+x = np.linspace(data[:, -2].min(), data[:, -2].max())
+plt.plot(x,
+         reg_model.intercept + reg_model.slope * x,
+         color='red',
+         ls=':',
+         aa=True)
+plt.annotate(f'$R^2$ = {reg_model.rvalue ** 2:.2f}', xy=(0.1, 0.3), xycoords='axes fraction', fontsize=10)
+plt.annotate(f'LOD: {LOD:.2f}', xy=(0.3, 0.3), xycoords='axes fraction', fontsize=10)
+plt.annotate(f'LOQ: {LOQ:.2f}', xy=(0.5, 0.3), xycoords='axes fraction', fontsize=10)
+plt.annotate(f'Slope: {Slope:.2f}', xy=(0.7, 0.3), xycoords='axes fraction', fontsize=10)
+plt.xlabel('mass (mg)')
+plt.ylabel('v (GHz)')
+plt.show()
+
+'''X = data[:, 0:1]
+y = data[:, 3]
+
+# Gaussian Process with Radial-basis function (RBF) kernel
+kernel = 1.0 * RBF(length_scale=1.0, length_scale_bounds=(1e-05, 1e5)) + WhiteKernel(noise_level=1, noise_level_bounds=(1e-06, 1e6))
+gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
+
+
+# Fit to data and predict
+gp.fit(X, y)
+X_pred = np.linspace(X.min(), X.max(), 1000)[:, np.newaxis]
+y_pred, sigma = gp.predict(X_pred, return_std=True)
+
+# Plot
+plt.figure()
+plt.plot(X, y, 'r.', markersize=10, label='Observations')
+plt.plot(X_pred, y_pred, 'b-', label='Prediction')
+plt.fill_between(
+    X_pred.ravel(),
+    y_pred - 1.96 * sigma,
+    y_pred + 1.96 * sigma,
+    alpha=0.5
+)
+plt.xlabel('T / °C')
+plt.ylabel(r'$f\ /\ MHz$')
+plt.legend()
+plt.show()'''
+
+
+
