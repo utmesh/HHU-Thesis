@@ -1,0 +1,60 @@
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+path_main = os.path.dirname(os.path.abspath(__file__))
+print(path_main)
+data_path = os.path.join(path_main, 'data', 'Tensile_Strength', 'Ludiflash')
+print(data_path)
+print(os.listdir(data_path))
+merged_csv_path = 'Ludiflash_TS.csv'
+
+dfs = []
+selected_files = []
+
+for file in os.listdir(data_path):
+    # Check if the filename matches the specified format
+    if file.startswith('F') and '_m' in file and file.endswith('.xlsx'):
+        selected_files.append(file)
+print(selected_files)
+
+for file in selected_files:
+    try:
+        df = pd.read_excel(os.path.join(data_path, file))
+        print(df)
+
+        dfs.append(df)
+
+        print(f"{file} read successfully")
+
+    except Exception as e:
+        print(f'Error processing {file}:{e}')
+
+merged_df = pd.concat(dfs, ignore_index=False)
+
+
+merged_df.to_csv(merged_csv_path, index=False)
+
+print(f"All Excel files merged and saved to {merged_csv_path}")
+
+
+tensile_strength = merged_df['TS (N)']
+mass = merged_df['Weight']
+height = merged_df['Height']
+width = merged_df['Width']
+
+# Create a 3D plot
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+# Scatter plot
+ax.scatter(mass, height, width, s=tensile_strength*10, alpha=0.6)
+
+# Set labels and title
+ax.set_xlabel('Mass (mg)')
+ax.set_ylabel('Height (mm)')
+ax.set_zlabel('Width (mm)')
+ax.set_title('3D Bubble Plot of Tensile Strength, Mass, Height, and Width')
+
+plt.show()
