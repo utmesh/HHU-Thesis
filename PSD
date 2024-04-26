@@ -1,0 +1,37 @@
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+from mpl_toolkits.mplot3d import Axes3D
+
+path_main = os.path.dirname(os.path.abspath(__file__))
+print(path_main)
+data_path = os.path.join(path_main, 'data', 'PSD')
+print(data_path)
+print(os.listdir(data_path))
+
+df = pd.read_csv(os.path.join(data_path, 'CM_MCC_Umesh_19_4_2024_13_55_15.csv'), sep=';',
+                 skiprows=70)
+print(df)
+# Preprocess the 'q3(%)' column to convert comma-separated values to numeric
+df['q3(%)'] = df['q3(%)'].str.replace(',', '.').astype(float)
+df['d(um)'] = df['d(um)'].str.replace(',', '.').astype(float)
+df['Q3(%P)'] = df['Q3(%P)'].str.replace(',', '.').astype(float)
+# Calculate bar width proportionally based on logarithmic spacing
+x = df['d(um)']
+log_width = 0.2 * np.diff(np.log10(x)).mean()
+fig, ax1 = plt.subplots()
+ax1.plot(df['d(um)'], df['Q3(%P)'], color='red', label='Cumulative Curve')
+ax1.set_ylabel('Q3(%P)', color='red')
+ax2 = ax1.twinx()
+ax2.bar(df['d(um)'],df['q3(%)'], color='black', width=log_width, edgecolor='blue', linewidth=5.5)
+ax2.set_ylabel('q3(%)', color='blue')
+# Set x-axis and y-axis limits to ensure they meet at a point
+ax1.set_xlim(left=min(df['d(um)']), right=max(df['d(um)']))
+ax1.set_ylim(bottom=0)
+ax2.set_ylim(bottom=0)
+ax1.set_xlabel('d(\u03BCm)')
+
+
+plt.xscale('log')
+plt.show()
