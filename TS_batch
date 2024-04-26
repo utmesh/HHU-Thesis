@@ -1,0 +1,25 @@
+import os
+import pandas as pd
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+path_main = os.path.dirname(os.path.abspath(__file__))
+print(path_main)
+data_path = os.path.join(path_main, 'data', 'Tensile_Strength', 'Lactose_MCC')
+print(data_path)
+print(os.listdir(data_path))
+
+df = pd.read_excel(os.path.join(data_path, 'Lactose_MCC_batch.xlsx'))
+print(df)
+
+plt.figure(figsize=(10, 6))
+plt.scatter(df['Batch'], df['SD'])
+plt.xticks(rotation=60)
+plt.xlabel('Batch')  # Rotate the x-axis label vertically
+plt.ylabel('SD_Tensile_strength (N)')
+plt.title('SD of Tensile strength of Lactose_MCC for each batch')
+
+plt.tight_layout()
+
+plt.show()
+plt.savefig('scatter_plot.png', bbox_inches='tight')
